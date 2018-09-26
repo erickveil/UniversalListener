@@ -96,21 +96,23 @@ UniversalListener::~UniversalListener()
 
 void UniversalListener::initConnections()
 {
-    if (_isConnected) { return; }
+    if (_isSignalsConnected) { return; }
     connect(&_server, SIGNAL(acceptError(QAbstractSocket::SocketError)),
             this, SLOT(_eventListenerAcceptError(QAbstractSocket::SocketError)));
     connect(&_server, SIGNAL(newConnection()),
             this, SLOT(_eventListenerNewConnection()));
-    _isConnected = true;
+    _isSignalsConnected = true;
 }
 
 void UniversalListener::startListener()
 {
-    if (!_isConnected || _port == -1) {
+    if (!_isSignalsConnected || _port == -1) {
         // TODO: handle problem
         qDebug() << "Listener not initialized.";
         return;
     }
+
+    if (_server.isListening()) { _server.close(); }
 
     bool isListening = _server.listen(QHostAddress::Any, _port);
 
@@ -127,6 +129,11 @@ void UniversalListener::startListener()
         qDebug() << "Listening on " << _server.serverAddress().toString()
                  << ":" << QString::number(_server.serverPort());
     }
+}
+
+void UniversalListener::stopListener()
+{
+    if (_server.isListening()) { _server.close(); }
 }
 
 void UniversalListener::_eventListenerAcceptError(QAbstractSocket::SocketError err)
