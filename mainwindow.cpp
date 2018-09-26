@@ -17,5 +17,22 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_pbStartListener_clicked()
 {
-    _listener.startListener(50504);
+    int port = 50504;
+    std::function<void (QByteArray)> parseCallback =
+            [](QByteArray response) {
+        qDebug() << "Parse callback: " << response;
+
+    };
+    std::function<QByteArray (QByteArray)> ackCallback =
+            [](QByteArray response) {
+        qDebug() << "Ack callback: " << response;
+        return "Ack";
+    };
+    std::function<void (QAbstractSocket::SocketError, QString)>  errorCallback =
+            [](QAbstractSocket::SocketError errNo, QString errStr) {
+        qDebug() << "Error callback: " << QString::number(errNo) << ", " << errStr;
+    };
+
+    _listener.initData(port, parseCallback, ackCallback, errorCallback);
+    _listener.startListener();
 }

@@ -5,6 +5,87 @@ UniversalListener::UniversalListener(QObject *parent) : QObject(parent)
 
 }
 
+UniversalListener::UniversalListener(int port)
+{
+    setPort(port);
+}
+
+UniversalListener::UniversalListener(
+        int port, std::function<void (QByteArray)> parseCallback)
+{
+    initData(port,parseCallback);
+}
+
+UniversalListener::UniversalListener(
+        int port, std::function<void (QByteArray)> parseCallback,
+        std::function<QByteArray (QByteArray)> ackCallback)
+{
+    initData(port,parseCallback, ackCallback);
+}
+
+UniversalListener::UniversalListener(int port,
+        std::function<void (QByteArray)> parseCallback,
+        std::function<QByteArray (QByteArray)> ackCallback,
+        std::function<void (QAbstractSocket::SocketError, QString)>
+                                     errorCallback)
+{
+    initData(port,parseCallback, ackCallback, errorCallback);
+}
+
+void UniversalListener::initData(
+        int port, std::function<void (QByteArray)> parseCallback)
+{
+    setPort(port);
+    setParseCallback(parseCallback);
+    initConnections();
+}
+
+void UniversalListener::initData(
+        int port,
+        std::function<void (QByteArray)> parseCallback,
+        std::function<QByteArray (QByteArray)> ackCallback)
+{
+    setPort(port);
+    setParseCallback(parseCallback);
+    setAckCallback(ackCallback);
+    initConnections();
+}
+
+void UniversalListener::initData(int port,
+        std::function<void (QByteArray)> parseCallback,
+        std::function<QByteArray (QByteArray)> ackCallback,
+        std::function<void (QAbstractSocket::SocketError, QString)> errorCallback)
+{
+    setPort(port);
+    setParseCallback(parseCallback);
+    setAckCallback(ackCallback);
+    setErrorCallback(errorCallback);
+    initConnections();
+}
+
+void UniversalListener::setPort(int port)
+{
+    _port = port;
+}
+
+void UniversalListener::setParseCallback(
+        std::function<void (QByteArray)> parseCallback)
+{
+    _parseCallback = parseCallback;
+}
+
+void UniversalListener::setAckCallback(
+        std::function<QByteArray (QByteArray)> ackCallback)
+{
+    _ackCallback = ackCallback;
+}
+
+void UniversalListener::setErrorCallback(
+        std::function<void (QAbstractSocket::SocketError, QString)> errorCallback)
+{
+    _errorCallback = errorCallback;
+}
+
 UniversalListener::~UniversalListener()
 {
     if (_connection != nullptr) {
@@ -15,6 +96,7 @@ UniversalListener::~UniversalListener()
 
 void UniversalListener::initConnections()
 {
+    if (_isConnected) { return; }
     connect(&_server, SIGNAL(acceptError(QAbstractSocket::SocketError)),
             this, SLOT(_eventListenerAcceptError(QAbstractSocket::SocketError)));
     connect(&_server, SIGNAL(newConnection()),
@@ -22,19 +104,22 @@ void UniversalListener::initConnections()
     _isConnected = true;
 }
 
-void UniversalListener::startListener(int port)
+void UniversalListener::startListener()
 {
-    if (!_isConnected) {
+    if (!_isConnected || _port == -1) {
         // TODO: handle problem
         qDebug() << "Listener not initialized.";
         return;
     }
 
-    bool isListening = _server.listen(QHostAddress::Any, port);
+    bool isListening = _server.listen(QHostAddress::Any, _port);
 
     if (!isListening) {
         // TODO: Handle error
         qDebug() << "Listening error: " << _server.errorString();
+        if (_errorCallback) {
+            _errorCallback(_server.serverError(), _server.errorString());
+        }
         _server.close();
         return;
     }
@@ -48,6 +133,7 @@ void UniversalListener::_eventListenerAcceptError(QAbstractSocket::SocketError e
 {
     qDebug() << "Connection accept error: " + _server.errorString();
     // TODO: Run error callback.
+    if (_errorCallback) { _errorCallback(err, _server.errorString()); }
 }
 
 void UniversalListener::_eventListenerNewConnection()
@@ -97,6 +183,7 @@ void UniversalListener::_eventSocketDisconnected()
 
 void UniversalListener::_eventSocketError(QAbstractSocket::SocketError err)
 {
+    Q_UNUSED(err);
     qDebug() << "Event error: " << _connection->errorString();
 
 }
@@ -121,7 +208,6 @@ void UniversalListener::_eventIODeviceBytesWritten(qint64 bytes)
 
 void UniversalListener::_eventIODeviceReadyRead()
 {
-    // Read data
     qDebug() << "Event Ready Read.";
     int bytesAvailable = _connection->bytesAvailable();
     qDebug() << "Starting bytes available: " << QString::number(bytesAvailable);
@@ -136,14 +222,18 @@ void UniversalListener::_eventIODeviceReadyRead()
 
     qDebug() << "Data received: " << receivedData;
 
-    // Run Ack callback if exists
-    // Write (ack or echo if no ack callback) response to socket.
-    _connection->write(receivedData);
+    QByteArray ack;
+    ack.clear();
 
-    // Tell the client we're done.
+    if (_ackCallback) { ack = _ackCallback(receivedData); }
+    else { ack = receivedData; }
+
+    _connection->write(ack);
+
     _connection->flush();
     _connection->close();
 
-    // Run Parse callback if exists
-
+    if (_parseCallback) {
+        _parseCallback(receivedData);
+    }
 }
