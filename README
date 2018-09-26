@@ -1,0 +1,6 @@
+# Universal Listener
+
+An easier to use listener that doesn't require you to set up every inane signal
+and slot. Just define a couple of callbacks, call the method, and get on with
+your day.
+
